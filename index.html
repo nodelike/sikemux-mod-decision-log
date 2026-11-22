@@ -1,0 +1,314 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision log</title>
+<style>
+  :root { color-scheme: light dark; --r: calc(var(--radius, 8px) * 0.625); --bw: var(--border-width, 1px); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    padding: 14px 16px 40px;
+    background: var(--background, transparent);
+    color: var(--foreground);
+    font: 13px/1.45 var(--font-sans, system-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  .mono { font-family: var(--font-mono, ui-monospace); font-size: 11px; }
+  .muted { color: var(--muted-foreground); }
+  .faint { color: var(--faint-foreground, var(--muted-foreground)); }
+  .label {
+    display: flex; align-items: center; gap: 8px; margin: 18px 0 4px;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground);
+  }
+  .label::after { content: ""; flex: 1; height: var(--bw); background: var(--border); }
+  .btn {
+    border: var(--bw) solid var(--border); background: transparent; border-radius: var(--r);
+    padding: 3px 10px; cursor: pointer; white-space: nowrap; transition: background 90ms ease-out;
+  }
+  .btn:hover { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-foreground); }
+  .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--foreground)); }
+  .btn.quiet { border-color: transparent; color: var(--muted-foreground); padding: 3px 6px; }
+  .btn.quiet:hover { color: var(--foreground); }
+  .field {
+    width: 100%; padding: 6px 9px; outline: none; resize: vertical;
+    background: color-mix(in srgb, var(--foreground) 3%, transparent);
+    border: var(--bw) solid var(--border); border-radius: var(--r);
+  }
+  .field:focus { border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); }
+  .field::placeholder { color: var(--faint-foreground, var(--muted-foreground)); }
+
+  header { display: flex; align-items: center; gap: 8px; }
+  header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+  header .count { flex: 1; }
+  .composer { margin-top: 10px; display: grid; gap: 6px; }
+  .composer .more { display: none; gap: 6px; }
+  .composer.open .more { display: grid; }
+  .composer .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .filters { display: flex; gap: 4px; margin-top: 14px; align-items: center; }
+  .chip {
+    border: var(--bw) solid transparent; background: transparent; border-radius: 999px;
+    padding: 1px 9px; cursor: pointer; color: var(--muted-foreground); font-size: 12px;
+  }
+  .chip:hover { color: var(--foreground); }
+  .chip.on { background: color-mix(in srgb, var(--foreground) 9%, transparent); color: var(--foreground); }
+  .filters .search { margin-left: auto; width: 180px; padding: 3px 8px; font-size: 12px; }
+
+  .item { border-top: var(--bw) solid var(--border); padding: 9px 2px; }
+  .item:first-child { border-top: 0; }
+  .item-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+  .item-head .title { flex: 1; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+  .item.superseded .title, .item.dropped .title { color: var(--muted-foreground); text-decoration: line-through; text-decoration-color: var(--border); }
+  .status {
+    font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 4px; border: var(--bw) solid var(--border); color: var(--muted-foreground); flex: none;
+  }
+  .status.decided { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, var(--border)); }
+  .status.proposed { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
+  .meta { font-size: 11px; margin-top: 2px; }
+  .body { margin-top: 6px; display: grid; gap: 4px; font-size: 12px; }
+  .body .k { color: var(--muted-foreground); }
+  .body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .edit { margin-top: 8px; display: grid; gap: 6px; }
+  .edit .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .edit .actions .spacer { flex: 1; }
+  .empty { padding: 28px 0; text-align: center; color: var(--muted-foreground); }
+  .empty .mono { display: block; margin-top: 6px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 14px; transform: translate(-50%, 8px); opacity: 0;
+    padding: 5px 12px; border-radius: var(--r); font-size: 12px; pointer-events: none;
+    background: var(--card, var(--background)); border: var(--bw) solid var(--border);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); transition: opacity 140ms ease-out, transform 140ms ease-out;
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .toast.bad { color: var(--destructive); }
+  @media (prefers-reduced-motion: reduce) { .toast, .btn { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Decisions</h1>
+  <span class="count muted" id="count"></span>
+</header>
+
+<form class="composer" id="composer" autocomplete="off">
+  <input class="field" id="title" placeholder="What was decided?" maxlength="200">
+  <div class="more">
+    <textarea class="field" id="why" rows="2" placeholder="Why"></textarea>
+    <textarea class="field" id="against" rows="2" placeholder="What it costs, or what was turned down"></textarea>
+    <div class="actions">
+      <button type="button" class="btn quiet" id="propose">Save as proposed</button>
+      <button type="submit" class="btn primary">Log decision</button>
+    </div>
+  </div>
+</form>
+
+<div class="filters" id="filters">
+  <button class="chip on" data-show="all">All</button>
+  <button class="chip" data-show="proposed">Proposed</button>
+  <button class="chip" data-show="decided">Decided</button>
+  <button class="chip" data-show="past">Superseded</button>
+  <input class="field search" id="search" placeholder="Search" type="search">
+</div>
+
+<div id="list"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const COLLECTION = "decisions";
+const NEXT = { proposed: "decided", decided: "superseded", superseded: "decided", dropped: "proposed" };
+const $ = (id) => document.getElementById(id);
+const kept = sikemux.view.get() || {};
+let docs = [];
+let show = kept.show || "all";
+let open = kept.open || null;
+let editing = null;
+
+const escape = (text) =>
+  String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+function ago(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+let toastTimer = 0;
+function toast(text, bad) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.toggle("bad", !!bad);
+  el.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("on"), bad ? 4000 : 1600);
+}
+
+const remember = () => sikemux.view.set({ show, open });
+const who = (row) => (row.by === "person" ? "you" : row.name ? `@${row.name}` : "an agent");
+const fail = (error) => toast(error.message || String(error), true);
+
+function shown() {
+  const words = $("search").value.trim().toLowerCase();
+  return docs
+    .filter(({ doc }) =>
+      show === "all" ? true : show === "past" ? doc.status === "superseded" || doc.status === "dropped" : doc.status === show,
+    )
+    .filter(({ doc }) => !words || [doc.title, doc.why, doc.against].join(" ").toLowerCase().includes(words))
+    .sort((a, b) => (b.doc.decidedAt || b.at) - (a.doc.decidedAt || a.at));
+}
+
+function render() {
+  const proposed = docs.filter(({ doc }) => doc.status === "proposed").length;
+  const decided = docs.filter(({ doc }) => doc.status === "decided").length;
+  $("count").textContent = docs.length ? `${decided} standing${proposed ? ` · ${proposed} proposed` : ""}` : "";
+  sikemux.badge(proposed ? `${proposed} proposed` : null);
+  for (const chip of $("filters").querySelectorAll(".chip")) chip.classList.toggle("on", chip.dataset.show === show);
+
+  const rows = shown();
+  if (!rows.length) {
+    $("list").innerHTML = docs.length
+      ? `<div class="empty">Nothing matches.</div>`
+      : `<div class="empty">No decisions yet. Log one above, or let an agent write to
+         <span class="mono">${COLLECTION}</span> with mod_write.</div>`;
+    return;
+  }
+  $("list").innerHTML = rows
+    .map(({ id, doc, at, ...row }) => {
+      const status = doc.status || "decided";
+      const isOpen = open === id;
+      const body = isOpen && editing !== id
+        ? `<div class="body">
+             ${doc.why ? `<p><span class="k">Why · </span>${escape(doc.why)}</p>` : ""}
+             ${doc.against ? `<p><span class="k">Against · </span>${escape(doc.against)}</p>` : ""}
+             <div class="edit"><div class="actions">
+               <button class="btn" data-act="status" data-id="${id}">Mark ${NEXT[status]}</button>
+               <button class="btn quiet" data-act="edit" data-id="${id}">Edit</button>
+               <span class="spacer"></span>
+               ${status !== "dropped" ? `<button class="btn quiet" data-act="drop" data-id="${id}">Drop</button>` : ""}
+               <button class="btn quiet" data-act="remove" data-id="${id}">Delete</button>
+             </div></div>
+           </div>`
+        : "";
+      const form = editing === id
+        ? `<form class="edit" data-form="${id}">
+             <input class="field" name="title" value="${escape(doc.title)}" maxlength="200">
+             <textarea class="field" name="why" rows="2" placeholder="Why">${escape(doc.why)}</textarea>
+             <textarea class="field" name="against" rows="2" placeholder="What it costs, or what was turned down">${escape(doc.against)}</textarea>
+             <div class="actions"><span class="spacer"></span>
+               <button type="button" class="btn quiet" data-act="cancel">Cancel</button>
+               <button type="submit" class="btn primary">Save</button></div>
+           </form>`
+        : "";
+      return `<div class="item ${status}">
+        <div class="item-head" data-act="toggle" data-id="${id}">
+          <span class="title">${escape(doc.title)}</span>
+          <span class="status ${status}">${status}</span>
+        </div>
+        <div class="meta faint">${who(row)} · ${ago(doc.decidedAt || at)}</div>
+        ${body}${form}
+      </div>`;
+    })
+    .join("");
+}
+
+sikemux.watch("data", { collection: COLLECTION }, (list, error) => {
+  if (error) return fail(new Error(error));
+  docs = list || [];
+  if (!editing) render();
+});
+
+async function log(status) {
+  const title = $("title").value.trim();
+  if (!title) return $("title").focus();
+  const doc = { title, status, decidedAt: Date.now() };
+  const why = $("why").value.trim();
+  const against = $("against").value.trim();
+  if (why) doc.why = why;
+  if (against) doc.against = against;
+  try {
+    await sikemux.data.set(COLLECTION, `d-${Date.now().toString(36)}`, doc);
+    $("composer").reset();
+    $("composer").classList.remove("open");
+    toast(status === "proposed" ? "Proposed" : "Logged");
+  } catch (error) {
+    fail(error);
+  }
+}
+
+$("title").addEventListener("focus", () => $("composer").classList.add("open"));
+$("composer").addEventListener("submit", (event) => (event.preventDefault(), log("decided")));
+$("propose").addEventListener("click", () => log("proposed"));
+$("search").addEventListener("input", render);
+$("filters").addEventListener("click", (event) => {
+  const chip = event.target.closest(".chip");
+  if (!chip) return;
+  show = chip.dataset.show;
+  remember();
+  render();
+});
+
+$("list").addEventListener("click", async (event) => {
+  const target = event.target.closest("[data-act]");
+  if (!target) return;
+  const id = target.dataset.id;
+  const doc = docs.find((row) => row.id === id)?.doc;
+  try {
+    switch (target.dataset.act) {
+      case "toggle":
+        open = open === id ? null : id;
+        editing = null;
+        remember();
+        return render();
+      case "edit":
+        editing = id;
+        return render();
+      case "cancel":
+        editing = null;
+        return render();
+      case "status": {
+        const status = NEXT[doc.status || "decided"];
+        await sikemux.data.patch(COLLECTION, id, { status, decidedAt: status === "decided" ? Date.now() : doc.decidedAt });
+        return toast(`Marked ${status}`);
+      }
+      case "drop":
+        await sikemux.data.patch(COLLECTION, id, { status: "dropped" });
+        return toast("Dropped");
+      case "remove":
+        await sikemux.data.remove(COLLECTION, id);
+        open = null;
+        remember();
+        return toast("Deleted");
+    }
+  } catch (error) {
+    fail(error);
+  }
+});
+
+$("list").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const title = form.title.value.trim();
+  if (!title) return form.title.focus();
+  try {
+    await sikemux.data.patch(COLLECTION, form.dataset.form, {
+      title,
+      why: form.why.value.trim() || null,
+      against: form.against.value.trim() || null,
+    });
+    editing = null;
+    toast("Saved");
+  } catch (error) {
+    fail(error);
+  }
+});
+
+sikemux.every(60000, () => editing || render());
+</script>
+</body>
+</html>

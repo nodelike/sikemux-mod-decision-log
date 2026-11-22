@@ -1,0 +1,24 @@
+{
+  "name": "Decision log",
+  "icon": "book",
+  "description": "What the project decided, why, and what it cost. You and your agents log decisions in one place; agents read them back with mod_read before they reopen a settled question.",
+  "reads": [],
+  "writes": [],
+  "collections": {
+    "decisions": {
+      "description": "One decision per document, id d-<base36 time>. status is proposed until someone settles it.",
+      "schema": {
+        "type": "object",
+        "required": ["title", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "maxLength": 200, "description": "The decision, in one line." },
+          "why": { "type": "string", "maxLength": 4000 },
+          "against": { "type": "string", "maxLength": 4000, "description": "What it costs, or the option turned down." },
+          "status": { "enum": ["proposed", "decided", "superseded", "dropped"] },
+          "decidedAt": { "type": "integer", "minimum": 0, "description": "Milliseconds since 1970." }
+        }
+      }
+    }
+  }
+}
